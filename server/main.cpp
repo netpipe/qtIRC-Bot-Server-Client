@@ -122,7 +122,7 @@ public:
             QString target = line.section(' ', 1, 1);
             QString msg = line.section(' ', 2);
             if (target.startsWith('#')) {
-                broadcast(target, ":" + nickname + " PRIVMSG " + target + " " + msg);
+                broadcast(target, ":" + nickname + " PRIVMSG " + target + " " + msg, true);
             } else {
                 QReadLocker locker(&nickLock);
                 if (nickToSocket.contains(target)) {
