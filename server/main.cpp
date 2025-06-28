@@ -92,24 +92,58 @@ public:
             nickToSocket[nickname] = socket;
             send("001 " + nickname + " :Welcome!");
         } else if (line.startsWith("JOIN ")) {
-            QString chan = line.section(' ', 1).trimmed();
-            if (!chan.startsWith('#')) return;
+        QString chan = line.section(' ', 1).trimmed();
+        if (!chan.startsWith('#')) return;
 
-            Channel* ch;
-            {
-                QWriteLocker locker(&channelsLock);
-                if (!channels.contains(chan))
-                    channels[chan] = new Channel(chan);
-                ch = channels[chan];
+        Channel* ch;
+        {
+            QWriteLocker locker(&channelsLock);
+            if (!channels.contains(chan))
+                channels[chan] = new Channel(chan);
+            ch = channels[chan];
+            ch->join(nickname);  // ✅ Join FIRST
+        }
+
+        currentChannel = chan;
+
+        // Send JOIN to self
+        send(":" + nickname + " JOIN " + chan);
+
+        // Send topic
+        send("332 " + nickname + " " + chan + " :" + (ch->topic.isEmpty() ? "No topic" : ch->topic));
+
+        // Build NAMES list, including self
+        QStringList names;
+        {
+           //  names << nickname;
+            QReadLocker locker(&channelsLock);
+            for (const QString& user : ch->userList()) {
+             //   QString prefix = ch->isOp(user) ? "@" : "";
+             //   names << prefix + user;
+                names << user;
             }
+        }
+        send("353 " + nickname + " = " + chan + " :" + names.join(" "));
+        send("366 " + nickname + " " + chan + " :End of NAMES list");
 
-            ch->join(nickname);
-            currentChannel = chan;
-            send(":" + nickname + " JOIN " + chan);
-            send("332 " + nickname + " " + chan + " :" + (ch->topic.isEmpty() ? "No topic" : ch->topic));
-            send("353 " + nickname + " = " + chan + " :" + ch->userList().join(" "));
+        // Broadcast JOIN to others
+        broadcast(chan, ":" + nickname + " JOIN " + chan, true);
+    }
+else if (line.startsWith("NAMES ")) {
+            QString chan = line.section(' ', 1).trimmed();
+        //    QReadLocker locker(&channelsLock);
+            QStringList names;
+            {
+                QReadLocker locker(&channelsLock);
+                for (const QString& user : channels[chan]->userList()) {
+                    QString prefix;
+                   //if (channels[chan]->ops.contains(user)) prefix = "@";
+                  //  names << prefix + user;
+                     names << user;
+                }
+            }
+            send("353 " + nickname + " = " + chan + " :" + names.join(" "));
             send("366 " + nickname + " " + chan + " :End of NAMES list");
-            broadcast(chan, ":" + nickname + " JOIN " + chan, true);
         } else if (line.startsWith("PART ")) {
             QString chan = line.section(' ', 1).trimmed();
             QReadLocker locker(&channelsLock);
