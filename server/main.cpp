@@ -21,6 +21,37 @@ public:
 
 Logger *logger;
 
+class Channel : public QObject {
+    Q_OBJECT
+public:
+    QString name;
+    QString topic;
+    QSet<QString> users;
+    QSet<QString> ops;
+
+    Channel(const QString &name) : name(name) {}
+
+    void join(const QString &user) {
+        users.insert(user);
+    }
+
+    void part(const QString &user) {
+        users.remove(user);
+    }
+
+    QStringList userList() const {
+        return users.values();
+    }
+
+    bool hasUser(const QString &user) const {
+        return users.contains(user);
+    }
+
+    void setTopic(const QString &t) {
+        topic = t;
+    }
+};
+
 class IrcClientHandler : public QObject {
     Q_OBJECT
 public:
@@ -97,43 +128,43 @@ private slots:
                 } else {
                     send(":server 401 " + user + " " + target + " :User not found");
                 }
-            } else if (cmd == "/JOIN" && parts.size() >= 2) {
-                QString chan = parts[1];
-                if (!chan.startsWith("#")) chan = "#" + chan;
+            } else if (cmd == "JOIN" && parts.size() >= 2) {
+                QString chanName = parts[1];
+                if (!chanName.startsWith("#")) chanName.prepend("#");
 
-                channels[chan].insert(user);
-                send(":" + user + " JOIN " + chan);
+                if (!channels.contains(chanName))
+                    channels[chanName] = new Channel(chanName);
 
-                // Send topic (332)
-                QString topic = channelTopics.value(chan, "No topic is set");
-                send(":server 332 " + user + " " + chan + " :" + topic);
+                Channel *chan = channels[chanName];
+                chan->join(user);
 
-                // Send NAMES list (353)
-                QStringList names = channels[chan].values();
-                send(":server 353 " + user + " = " + chan + " :" + names.join(" "));
+                send(":" + user + " JOIN " + chanName);
+                send(":server 332 " + user + " " + chanName + " :" + (chan->topic.isEmpty() ? "No topic" : chan->topic));
+                send(":server 353 " + user + " = " + chanName + " :" + chan->userList().join(" "));
+                send(":server 366 " + user + " " + chanName + " :End of /NAMES list");
 
-                // End of NAMES list (366)
-                send(":server 366 " + user + " " + chan + " :End of /NAMES list");
-
-                // Notify others
-                foreach (const QString &u, channels[chan]) {
+                for (const QString &u : chan->users) {
                     if (u != user && handlers.contains(u))
-                        handlers[u]->send(":" + user + " JOIN " + chan);
+                        handlers[u]->send(":" + user + " JOIN " + chanName);
                 }
-
-
-
             } else if (cmd == "/PART" && parts.size() >= 2) {
-                QString chan = parts[1];
-                channels[chan].remove(user);
-                send(":" + user + " PART " + chan);
+                QString chanName = parts[1];
+                if (channels.contains(chanName)) {
+                    Channel *chan = channels[chanName];
+                    chan->part(user);
+                    send(":" + user + " PART " + chanName);
+                }
             } else if (cmd == "/TOPIC" && parts.size() >= 3) {
-                QString chan = parts[1];
+                QString chanName = parts[1];
                 QString topic = line.section(' ', 2);
-                channelTopics[chan] = topic;
-                foreach (const QString &u, channels[chan])
-                    if (handlers.contains(u))
-                        handlers[u]->send(":server 332 " + u + " " + chan + " :" + topic);
+                if (channels.contains(chanName)) {
+                    Channel *chan = channels[chanName];
+                    chan->setTopic(topic);
+                    for (const QString &u : chan->users) {
+                        if (handlers.contains(u))
+                            handlers[u]->send(":server 332 " + u + " " + chanName + " :" + topic);
+                    }
+                }
             } else if (cmd == "/REGISTERCHAN" && parts.size() >= 2) {
                 QString chan = parts[1];
                 QSqlQuery q;
@@ -152,8 +183,8 @@ private slots:
 
     void disconnected() {
         handlers.remove(user);
-        for (auto it = channels.begin(); it != channels.end(); ++it) {
-            it.value().remove(user);
+        for (Channel *chan : channels.values()) {
+            chan->part(user);
         }
         emit finished(this);
         socket->deleteLater();
@@ -165,8 +196,7 @@ private:
     bool registered;
     bool identified;
     static inline QMap<QString, IrcClientHandler*> handlers;
-    static inline QMap<QString, QSet<QString>> channels;
-    static inline QMap<QString, QString> channelTopics;
+    static inline QMap<QString, Channel*> channels;
 };
 
 class IrcServer : public QTcpServer {
