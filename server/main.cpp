@@ -99,12 +99,30 @@ private slots:
                 }
             } else if (cmd == "/JOIN" && parts.size() >= 2) {
                 QString chan = parts[1];
+                if (!chan.startsWith("#")) chan = "#" + chan;
+
                 channels[chan].insert(user);
                 send(":" + user + " JOIN " + chan);
+
+                // Send topic (332)
+                QString topic = channelTopics.value(chan, "No topic is set");
+                send(":server 332 " + user + " " + chan + " :" + topic);
+
+                // Send NAMES list (353)
+                QStringList names = channels[chan].values();
+                send(":server 353 " + user + " = " + chan + " :" + names.join(" "));
+
+                // End of NAMES list (366)
+                send(":server 366 " + user + " " + chan + " :End of /NAMES list");
+
+                // Notify others
                 foreach (const QString &u, channels[chan]) {
                     if (u != user && handlers.contains(u))
                         handlers[u]->send(":" + user + " JOIN " + chan);
                 }
+
+
+
             } else if (cmd == "/PART" && parts.size() >= 2) {
                 QString chan = parts[1];
                 channels[chan].remove(user);
