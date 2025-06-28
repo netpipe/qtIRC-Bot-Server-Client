@@ -30,7 +30,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 RESOURCES +=
 
 
-LIBS += -L/Users/macbook2015/Desktop/brew/lib -lssh
+LIBS += -L/Users/macbook2015/Desktop/brew/lib
 
 INCLUDEPATH += /Users/macbook2015/Desktop/brew/include /Users/macbook2015/Desktop/brew/lib
 
