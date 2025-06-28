@@ -134,8 +134,9 @@ private slots:
 
     void disconnected() {
         handlers.remove(user);
-        foreach (auto &chan, channels)
-            chan.remove(user);
+        for (auto it = channels.begin(); it != channels.end(); ++it) {
+            it.value().remove(user);
+        }
         emit finished(this);
         socket->deleteLater();
     }
@@ -174,14 +175,20 @@ protected:
             socket->setSocketDescriptor(socketDescriptor);
         }
 
-        QThread *thread = QThread::create([=]() {
-            IrcClientHandler *handler = new IrcClientHandler(socket);
-            QObject::connect(handler, &IrcClientHandler::finished, thread, &QThread::quit);
-            QObject::connect(thread, &QThread::finished, handler, &QObject::deleteLater);
-            thread->exec();
+        QThread *thread = new QThread;
+        IrcClientHandler *handler = new IrcClientHandler(socket);
+        handler->moveToThread(thread);
+
+        connect(thread, &QThread::started, [handler]() {
+            // Ready to start handling
         });
+        connect(handler, &IrcClientHandler::finished, thread, &QThread::quit);
+        connect(thread, &QThread::finished, handler, &QObject::deleteLater);
+        connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+
         thread->start();
     }
+
 
 private:
     bool sslMode;
